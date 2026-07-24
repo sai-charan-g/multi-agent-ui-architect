@@ -43,7 +43,11 @@ export async function runEditPipeline(
       log.step(2, 3, `🔍 Critic Agent — review iteration ${iterations}/${maxCriticLoops}`);
       
       // We pass the modified files as the "project" for the critic to review
-      const criticReport = await runCriticAgent({ files: editResult.files });
+      const criticReport = await runCriticAgent({ 
+        files: editResult.files,
+        dependencies: {},
+        devDependencies: {}
+      });
       
       log.info(`Critic score: ${criticReport.overallScore}/10`, {
         issues: criticReport.issues.length,

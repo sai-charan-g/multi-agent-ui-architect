@@ -271,7 +271,7 @@ app.post('/api/projects/:projectName/preview/start', async (req, res) => {
     res.json({ success: true, port });
   } catch (error) {
     console.error("Preview start error:", error);
-    require('fs').writeFileSync('error.log', String(error) + '\n' + (error.stack || ''));
+    require('fs').writeFileSync('error.log', String(error) + '\n' + ((error as Error).stack || ''));
     res.status(500).json({ error: 'Failed to start preview' });
   }
 });
