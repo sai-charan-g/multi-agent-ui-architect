@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
+    "start:prod": "node dist/index.js serve",
     "serve": "tsx src/index.ts serve",
     "dev": "tsx src/index.ts serve",
     "generate": "tsx src/index.ts",
