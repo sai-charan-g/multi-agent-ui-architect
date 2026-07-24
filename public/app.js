@@ -67,9 +67,24 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
             return;
         }
 
-        connectSSE(data.jobId, terminalOutput, () => {
+        connectSSE(data.jobId, terminalOutput, (result) => {
             resetBtn(submitBtn, 'Generate Website');
-            showResult(resultContainer, resultPath, data.result?.outputDir || 'Generated');
+            
+            // Extract project name from outputDir
+            let generatedProjectName = 'Generated';
+            if (result && result.outputDir) {
+                const parts = result.outputDir.split(/[\\/]/);
+                generatedProjectName = parts[parts.length - 1];
+            }
+            
+            showResult(resultContainer, resultPath, result?.outputDir || 'Generated');
+            
+            const downloadBtn = document.getElementById('download-generated-btn');
+            downloadBtn.classList.remove('hidden');
+            downloadBtn.onclick = () => {
+                window.location.href = `/api/projects/${generatedProjectName}/download`;
+            };
+            
         }, () => resetBtn(submitBtn, 'Generate Website'));
 
     } catch (err) {
@@ -288,6 +303,11 @@ document.getElementById('delete-project-btn').onclick = async () => {
     }
 };
 
+document.getElementById('download-project-btn').onclick = () => {
+    if (!currentProject) return;
+    window.location.href = `/api/projects/${currentProject}/download`;
+};
+
 // Agent Edit Logic
 const agentEditForm = document.getElementById('agent-edit-form');
 const editTerminalModal = document.getElementById('edit-terminal-modal');
@@ -489,7 +509,7 @@ function connectSSE(jobId, terminalOutputEl, onDone, onError) {
             appendLog(terminalOutputEl, parsed.level, parsed.message);
             if (parsed.type === 'done') {
                 eventSource.close();
-                if (onDone) onDone();
+                if (onDone) onDone(parsed.result);
             } else if (parsed.type === 'error') {
                 eventSource.close();
                 if (onError) onError();

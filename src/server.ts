@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import archiver from 'archiver';
 import { resolve, join } from 'path';
 import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
 import { runPipeline } from './orchestrator/pipeline.js';
@@ -193,6 +194,34 @@ async function getProjectContext(projectName: string): Promise<GeneratedFile[]> 
   }
   return files;
 }
+
+app.get('/api/projects/:projectName/download', async (req, res) => {
+  const { projectName } = req.params;
+  const projectPath = join(OUTPUT_DIR, projectName);
+
+  try {
+    const projectStat = await stat(projectPath);
+    if (!projectStat.isDirectory()) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.attachment(`${projectName}.zip`);
+    const archive = archiver('zip', {
+      zlib: { level: 9 }
+    });
+
+    archive.on('error', (err) => {
+      res.status(500).send({ error: err.message });
+    });
+
+    archive.pipe(res);
+    archive.directory(projectPath, false);
+    archive.finalize();
+
+  } catch (error) {
+    res.status(404).json({ error: 'Project not found' });
+  }
+});
 
 app.post('/api/projects/:projectName/agent-edit', async (req, res) => {
   const { projectName } = req.params;
