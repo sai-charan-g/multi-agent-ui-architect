@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { log } from './logger.js';
 
-const KNOWLEDGE_DIR = resolve(import.meta.dirname, '..', 'knowledge');
+const KNOWLEDGE_DIR = resolve(process.cwd(), 'src', 'knowledge');
 
 /**
  * Load a single knowledge file by name (without extension).

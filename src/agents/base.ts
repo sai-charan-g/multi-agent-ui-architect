@@ -6,7 +6,7 @@ import { generateStructuredOutput } from '../lib/gemini.js';
 import { loadKnowledge } from '../lib/knowledge-loader.js';
 import { log } from '../lib/logger.js';
 
-const PROMPTS_DIR = resolve(import.meta.dirname, '..', 'prompts');
+const PROMPTS_DIR = resolve(process.cwd(), 'src', 'prompts');
 
 export interface AgentConfig<TOutput> {
   /** Agent name for logging */
