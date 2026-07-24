@@ -54,23 +54,25 @@ app.post('/api/generate', async (req, res) => {
 
   const jobId = Math.random().toString(36).substring(7);
   
-  runPipeline(prompt, {
-    maxCriticLoops: parseInt(loops ?? '3', 10),
-    projectName: projectName,
-  }).then(result => {
-    logEmitter.emit('log', {
-      level: 'success',
-      message: `Project completed at ${result.outputDir}`,
-      type: 'done',
-      result
+  setTimeout(() => {
+    runPipeline(prompt, {
+      maxCriticLoops: parseInt(loops ?? '3', 10),
+      projectName: projectName,
+    }).then(result => {
+      logEmitter.emit('log', {
+        level: 'success',
+        message: `Project completed at ${result.outputDir}`,
+        type: 'done',
+        result
+      });
+    }).catch(error => {
+      logEmitter.emit('log', {
+        level: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'error'
+      });
     });
-  }).catch(error => {
-    logEmitter.emit('log', {
-      level: 'error',
-      message: error instanceof Error ? error.message : String(error),
-      type: 'error'
-    });
-  });
+  }, 1500);
 
   res.json({ jobId, message: 'Generation started' });
 });
@@ -237,24 +239,26 @@ app.post('/api/projects/:projectName/agent-edit', async (req, res) => {
     
     const currentFiles = await getProjectContext(projectName);
     
-    runEditPipeline(prompt, currentFiles, {
-      projectName,
-      outputDir: projectDir,
-      images: processedImages.length > 0 ? processedImages : undefined,
-    }).then(result => {
-      logEmitter.emit('log', {
-        level: 'success',
-        message: `Edit completed at ${result.outputDir}`,
-        type: 'done',
-        result
+    setTimeout(() => {
+      runEditPipeline(prompt, currentFiles, {
+        projectName,
+        outputDir: projectDir,
+        images: processedImages.length > 0 ? processedImages : undefined,
+      }).then(result => {
+        logEmitter.emit('log', {
+          level: 'success',
+          message: `Edit completed at ${result.outputDir}`,
+          type: 'done',
+          result
+        });
+      }).catch(error => {
+        logEmitter.emit('log', {
+          level: 'error',
+          message: error instanceof Error ? error.message : String(error),
+          type: 'error'
+        });
       });
-    }).catch(error => {
-      logEmitter.emit('log', {
-        level: 'error',
-        message: error instanceof Error ? error.message : String(error),
-        type: 'error'
-      });
-    });
+    }, 1500);
 
     res.json({ jobId, message: 'Agent edit started' });
   } catch (error) {
