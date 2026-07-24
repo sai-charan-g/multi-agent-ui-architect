@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+// @ts-ignore: Archiver lacks default export in types but has one at runtime
 import archiver from 'archiver';
 import { resolve, join } from 'path';
 import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
@@ -210,7 +211,7 @@ app.get('/api/projects/:projectName/download', async (req, res) => {
       zlib: { level: 9 }
     });
 
-    archive.on('error', (err) => {
+    archive.on('error', (err: Error) => {
       res.status(500).send({ error: err.message });
     });
 
