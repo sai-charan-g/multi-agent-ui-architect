@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-// @ts-ignore: Archiver lacks default export in types but has one at runtime
-import archiver from 'archiver';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const archiver = require('archiver');
 import { resolve, join } from 'path';
 import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
 import { runPipeline } from './orchestrator/pipeline.js';
