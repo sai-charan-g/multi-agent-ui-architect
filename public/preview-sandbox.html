@@ -3,33 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live In-Browser Preview</title>
+  <title>Live In-Memory Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #preview-container {
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
       width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #090d16;
-      color: #94a3b8;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      min-height: 100%;
+      background-color: #030712;
+      color: #f9fafb;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
-    .loader {
+    #loader {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100%;
+      height: 100vh;
       text-align: center;
       padding: 1.5rem;
     }
     .spinner {
       width: 44px;
       height: 44px;
-      border: 3px solid rgba(255, 255, 255, 0.08);
+      border: 3px solid rgba(255, 255, 255, 0.1);
       border-top: 3px solid #6366f1;
       border-radius: 50%;
-      animation: spin 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      animation: spin 0.8s linear infinite;
       margin-bottom: 1.25rem;
     }
     @keyframes spin {
@@ -49,103 +57,239 @@
       font-weight: 500;
       margin-bottom: 0.75rem;
     }
-    iframe {
-      border: 0;
-      width: 100%;
-      height: 100%;
-      background: #ffffff;
-    }
   </style>
 </head>
 <body>
-  <div id="loader" class="loader">
+  <div id="loader">
     <div class="spinner"></div>
     <div class="badge">
       <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span>
-      MongoDB Atlas Virtual Runner
+      MongoDB Atlas Live Runner
     </div>
     <h3 id="loader-title" style="color: #f8fafc; font-size: 1.15rem; font-weight: 600; margin-bottom: 0.4rem;">
-      Compiling In-Browser Sandbox...
+      Compiling In-Memory Preview...
     </h3>
-    <p id="loader-desc" style="font-size: 0.85rem; color: #64748b; max-width: 420px; line-height: 1.5;">
-      Loading React components & styles directly from MongoDB Atlas into browser memory.
+    <p id="loader-desc" style="font-size: 0.85rem; color: #64748b; max-width: 440px; line-height: 1.5;">
+      Loading components and design tokens directly from MongoDB Atlas.
     </p>
   </div>
 
-  <div id="preview-container" style="display: none;"></div>
+  <div id="root"></div>
 
   <script type="module">
-    import { loadSandpackClient } from 'https://esm.sh/@codesandbox/sandpack-client@2.19.10';
+    // Load Lucide Icons from ESM
+    let LucideIcons = {};
+    try {
+      LucideIcons = await import('https://esm.sh/lucide-react@0.460.0?deps=react@18.3.1');
+    } catch (e) {
+      console.warn('Lucide icons fallback active');
+    }
 
-    async function initSandbox() {
+    // Modern Next.js and Utility Shims
+    window.React = window.React || React;
+    window.ReactDOM = window.ReactDOM || ReactDOM;
+
+    const NextLink = function({ href, children, className, ...props }) {
+      return React.createElement('a', { href: href || '#', className, ...props }, children);
+    };
+
+    const NextImage = function({ src, alt, width, height, className, ...props }) {
+      return React.createElement('img', { src, alt: alt || '', width, height, className, loading: 'lazy', ...props });
+    };
+
+    const NextFont = function() {
+      return { className: '', variable: '' };
+    };
+
+    // clsx & twMerge shim
+    function clsxShim(...args) {
+      return args
+        .flat()
+        .filter(Boolean)
+        .map(x => typeof x === 'object' ? Object.keys(x).filter(k => x[k]).join(' ') : x)
+        .join(' ');
+    }
+
+    function twMergeShim(...args) {
+      return clsxShim(...args);
+    }
+
+    function cvaShim(base, config) {
+      return function(props = {}) {
+        let classes = base || '';
+        if (config && config.variants) {
+          for (const key of Object.keys(config.variants)) {
+            const val = props[key] || (config.defaultVariants && config.defaultVariants[key]);
+            if (val && config.variants[key][val]) {
+              classes += ' ' + config.variants[key][val];
+            }
+          }
+        }
+        if (props.className) classes += ' ' + props.className;
+        return classes;
+      };
+    }
+
+    async function initPreview() {
       const urlParams = new URLSearchParams(window.location.search);
       const projectName = urlParams.get('project');
+      const loader = document.getElementById('loader');
       const loaderTitle = document.getElementById('loader-title');
-      const loaderDesc = document.getElementById('loader-desc');
 
       if (!projectName) {
-        document.getElementById('loader').innerHTML = '<p style="color:#ef4444; font-weight:600;">No project specified in URL query.</p>';
+        loader.innerHTML = '<p style="color:#ef4444; font-weight:600;">No project specified in URL query.</p>';
         return;
       }
 
-      loaderTitle.innerText = `Loading "${projectName}"...`;
+      loaderTitle.innerText = `Loading "${projectName}" from MongoDB...`;
 
       try {
         const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/bundle`);
-        if (!res.ok) {
-          throw new Error(`Project "${projectName}" could not be retrieved from MongoDB.`);
+        if (!res.ok) throw new Error(`Project "${projectName}" not found in MongoDB.`);
+        const bundle = await res.json();
+
+        // 1. Inject Stylesheet (globals.css + design tokens)
+        if (bundle.files['/styles.css'] && bundle.files['/styles.css'].code) {
+          const styleEl = document.createElement('style');
+          styleEl.innerHTML = bundle.files['/styles.css'].code;
+          document.head.appendChild(styleEl);
         }
 
-        const bundle = await res.json();
-        loaderTitle.innerText = `Starting Sandbox for ${bundle.brandName || bundle.name}...`;
-        loaderDesc.innerText = `Mounting ${Object.keys(bundle.files).length} virtual files and styles...`;
-
-        const container = document.getElementById('preview-container');
-        container.innerHTML = '';
-        container.style.display = 'block';
-
-        const iframe = document.createElement('iframe');
-        container.appendChild(iframe);
-
-        const client = await loadSandpackClient(
-          iframe,
-          {
-            files: bundle.files,
-            template: 'react-ts',
-            customSetup: {
-              dependencies: bundle.dependencies,
-              entry: bundle.entryFile || '/App.tsx',
-            },
-          },
-          {
-            showOpenInCodeSandbox: false,
+        // Configure Tailwind extensions
+        tailwind.config = {
+          darkMode: 'class',
+          theme: {
+            extend: {
+              colors: {
+                background: 'var(--background, #030712)',
+                foreground: 'var(--foreground, #f9fafb)',
+                primary: 'var(--primary, #6366f1)',
+                muted: 'var(--muted, #1f2937)',
+                accent: 'var(--accent, #38bdf8)',
+              },
+              fontFamily: {
+                heading: ['Outfit', 'sans-serif'],
+                body: ['Inter', 'sans-serif'],
+              }
+            }
           }
-        );
+        };
 
-        // Once Sandpack signals it has started, hide the loader
-        client.listen((msg) => {
-          if (msg.type === 'status' && msg.status === 'done') {
-            document.getElementById('loader').style.display = 'none';
+        // 2. In-Memory Module System
+        const moduleCache = {};
+        const rawFiles = bundle.files;
+
+        function normalizePath(p) {
+          return p.replace(/^\.?\//, '').replace(/\.(tsx|ts|jsx|js)$/, '');
+        }
+
+        function resolveModule(importPath, currentFilePath) {
+          if (importPath === 'react' || importPath === 'react/jsx-runtime') {
+            return { default: React, ...React };
           }
-        });
+          if (importPath === 'react-dom' || importPath === 'react-dom/client') {
+            return { default: ReactDOM, ...ReactDOM };
+          }
+          if (importPath === 'lucide-react') {
+            return new Proxy(LucideIcons, {
+              get(target, prop) {
+                if (prop in target) return target[prop];
+                // Fallback for missing icon: simple SVG placeholder
+                return (props) => React.createElement('svg', {
+                  width: 20,
+                  height: 20,
+                  viewBox: '0 0 24 24',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: 2,
+                  ...props
+                }, React.createElement('circle', { cx: 12, cy: 12, r: 10 }));
+              }
+            });
+          }
+          if (importPath === 'clsx') return { default: clsxShim, clsx: clsxShim };
+          if (importPath === 'tailwind-merge') return { default: twMergeShim, twMerge: twMergeShim };
+          if (importPath === 'class-variance-authority') return { default: cvaShim, cva: cvaShim };
+          if (importPath.includes('next/link')) return { default: NextLink, Link: NextLink };
+          if (importPath.includes('next/image')) return { default: NextImage, Image: NextImage };
+          if (importPath.includes('next/font')) return new Proxy({}, { get: () => NextFont });
 
-        // Safety timeout to dismiss loader after 2.5s
-        setTimeout(() => {
-          const loader = document.getElementById('loader');
-          if (loader) loader.style.display = 'none';
-        }, 2500);
+          // Local file resolution
+          let target = importPath.replace(/^@\//, 'src/').replace(/^\.?\//, '');
+          target = normalizePath(target);
+
+          for (const key of Object.keys(rawFiles)) {
+            const normalizedKey = normalizePath(key);
+            if (normalizedKey === target || normalizedKey.endsWith('/' + target) || target.endsWith(normalizedKey)) {
+              return executeModule(key);
+            }
+          }
+
+          console.warn('Could not resolve module:', importPath);
+          return {};
+        }
+
+        function executeModule(filePath) {
+          const norm = normalizePath(filePath);
+          if (moduleCache[norm]) return moduleCache[norm].exports;
+
+          const fileObj = rawFiles[filePath];
+          if (!fileObj || !fileObj.code) return {};
+
+          const module = { exports: {} };
+          moduleCache[norm] = module;
+
+          // Compile with Babel Standalone
+          const transformed = Babel.transform(fileObj.code, {
+            presets: ['react', 'typescript'],
+            plugins: ['transform-modules-commonjs'],
+            filename: filePath,
+          }).code;
+
+          const customRequire = (reqPath) => resolveModule(reqPath, filePath);
+
+          try {
+            const fn = new Function('require', 'module', 'exports', 'React', transformed);
+            fn(customRequire, module, module.exports, React);
+          } catch (err) {
+            console.error(`Error executing ${filePath}:`, err);
+          }
+
+          return module.exports;
+        }
+
+        // 3. Find and Render the Main Page Component
+        let mainPageExports = null;
+        for (const path of Object.keys(rawFiles)) {
+          if (path.includes('page.tsx') || path.includes('page.jsx')) {
+            mainPageExports = executeModule(path);
+            break;
+          }
+        }
+
+        const PageComponent = (mainPageExports && (mainPageExports.default || Object.values(mainPageExports)[0])) || null;
+
+        if (PageComponent) {
+          loader.style.display = 'none';
+          const rootEl = document.getElementById('root');
+          const root = ReactDOM.createRoot(rootEl);
+          root.render(React.createElement(PageComponent));
+        } else {
+          throw new Error('No page.tsx component found in the project.');
+        }
 
       } catch (err) {
-        document.getElementById('loader').innerHTML = `
-          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1.5rem; max-width: 480px;">
-            <p style="color:#ef4444; font-weight:600; margin-bottom:0.5rem; font-size: 1rem;">Failed to load in-browser preview</p>
-            <p style="color:#94a3b8; font-size:0.85rem; line-height: 1.4;">${err.message}</p>
+        console.error('Preview error:', err);
+        loader.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 10px; padding: 1.75rem; max-width: 500px;">
+            <p style="color:#ef4444; font-weight:600; margin-bottom:0.5rem; font-size: 1.05rem;">Preview Error</p>
+            <p style="color:#94a3b8; font-size:0.875rem; line-height: 1.5;">${err.message}</p>
           </div>
         `;
       }
     }
 
-    initSandbox();
+    initPreview();
   </script>
 </body>
 </html>
