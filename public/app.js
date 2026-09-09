@@ -567,41 +567,28 @@ function showResult(container, pathEl, path) {
     container.classList.remove('hidden');
 }
 
-// Preview Logic
-async function checkPreviewStatus() {
-    if (!currentProject) return;
-    try {
-        const res = await fetch(`/api/projects/${currentProject}/preview/status`);
-        const data = await res.json();
-        
-        if (data.status === 'running') {
-            showPreviewIframe(data.previewUrl || `/preview/${currentProject}/`);
-        } else if (data.status === 'starting') {
-            previewOverlay.classList.remove('hidden');
-            previewIframe.classList.add('hidden');
-            stopPreviewBtn.classList.add('hidden');
-            if (openPreviewExternalBtn) openPreviewExternalBtn.classList.add('hidden');
-            previewStatusText.innerText = 'Server is starting...';
-            startPreviewBtn.disabled = true;
-            startPreviewText.innerText = 'Starting...';
-            // poll
-            setTimeout(checkPreviewStatus, 2000);
-        } else {
-            hidePreviewIframe();
-        }
-    } catch (e) {
-        hidePreviewIframe();
+// Preview Logic (In-Browser Sandbox powered directly by MongoDB Atlas)
+function loadBrowserSandbox(projectName) {
+    if (!projectName) return;
+    previewOverlay.classList.add('hidden');
+    const url = `/preview-sandbox.html?project=${encodeURIComponent(projectName)}`;
+    previewIframe.src = url;
+    previewIframe.classList.remove('hidden');
+    stopPreviewBtn.classList.remove('hidden');
+    if (openPreviewExternalBtn) {
+        openPreviewExternalBtn.href = url;
+        openPreviewExternalBtn.classList.remove('hidden');
     }
 }
 
-function showPreviewIframe(previewUrlOrPort) {
+function checkPreviewStatus() {
+    if (!currentProject) return;
+    // Auto-load in-browser preview from MongoDB when viewing the preview tab
+    loadBrowserSandbox(currentProject);
+}
+
+function showPreviewIframe(url) {
     previewOverlay.classList.add('hidden');
-    let url = `/preview/${currentProject}/`;
-    if (typeof previewUrlOrPort === 'string') {
-        url = previewUrlOrPort.startsWith('http') ? previewUrlOrPort : `${window.location.origin}${previewUrlOrPort}`;
-    } else if (typeof previewUrlOrPort === 'number') {
-        url = `/preview/${currentProject}/`;
-    }
     previewIframe.src = url;
     previewIframe.classList.remove('hidden');
     stopPreviewBtn.classList.remove('hidden');
@@ -617,37 +604,16 @@ function hidePreviewIframe() {
     previewIframe.classList.add('hidden');
     stopPreviewBtn.classList.add('hidden');
     if (openPreviewExternalBtn) openPreviewExternalBtn.classList.add('hidden');
-    previewStatusText.innerText = 'Preview server is not running.';
+    previewStatusText.innerText = 'Preview is stopped. Click below to boot the in-browser sandbox.';
     startPreviewBtn.disabled = false;
-    startPreviewText.innerText = 'Start Preview Server';
+    startPreviewText.innerText = 'Launch In-Browser Preview';
 }
 
-startPreviewBtn.onclick = async () => {
+startPreviewBtn.onclick = () => {
     if (!currentProject) return;
-    startPreviewBtn.disabled = true;
-    startPreviewText.innerText = 'Starting...';
-    previewStatusText.innerText = 'Running npm install and starting Next.js server... this may take a minute on first run.';
-    
-    try {
-        const res = await fetch(`/api/projects/${currentProject}/preview/start`, { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-            showPreviewIframe(data.previewUrl || `/preview/${currentProject}/`);
-        } else {
-            throw new Error(data.error || 'Failed to start');
-        }
-    } catch (e) {
-        alert('Could not start preview: ' + e.message);
-        hidePreviewIframe();
-    }
+    loadBrowserSandbox(currentProject);
 };
 
-stopPreviewBtn.onclick = async () => {
-    if (!currentProject) return;
-    try {
-        await fetch(`/api/projects/${currentProject}/preview/stop`, { method: 'POST' });
-        hidePreviewIframe();
-    } catch (e) {
-        alert('Could not stop preview.');
-    }
+stopPreviewBtn.onclick = () => {
+    hidePreviewIframe();
 };

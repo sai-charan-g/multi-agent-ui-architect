@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live In-Browser Preview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #preview-container {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #090d16;
+      color: #94a3b8;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    .loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      padding: 1.5rem;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(255, 255, 255, 0.08);
+      border-top: 3px solid #6366f1;
+      border-radius: 50%;
+      animation: spin 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      margin-bottom: 1.25rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      color: #a5b4fc;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-bottom: 0.75rem;
+    }
+    iframe {
+      border: 0;
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader" class="loader">
+    <div class="spinner"></div>
+    <div class="badge">
+      <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span>
+      MongoDB Atlas Virtual Runner
+    </div>
+    <h3 id="loader-title" style="color: #f8fafc; font-size: 1.15rem; font-weight: 600; margin-bottom: 0.4rem;">
+      Compiling In-Browser Sandbox...
+    </h3>
+    <p id="loader-desc" style="font-size: 0.85rem; color: #64748b; max-width: 420px; line-height: 1.5;">
+      Loading React components & styles directly from MongoDB Atlas into browser memory.
+    </p>
+  </div>
+
+  <div id="preview-container" style="display: none;"></div>
+
+  <script type="module">
+    import { loadSandpackClient } from 'https://esm.sh/@codesandbox/sandpack-client@2.19.10';
+
+    async function initSandbox() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const projectName = urlParams.get('project');
+      const loaderTitle = document.getElementById('loader-title');
+      const loaderDesc = document.getElementById('loader-desc');
+
+      if (!projectName) {
+        document.getElementById('loader').innerHTML = '<p style="color:#ef4444; font-weight:600;">No project specified in URL query.</p>';
+        return;
+      }
+
+      loaderTitle.innerText = `Loading "${projectName}"...`;
+
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/bundle`);
+        if (!res.ok) {
+          throw new Error(`Project "${projectName}" could not be retrieved from MongoDB.`);
+        }
+
+        const bundle = await res.json();
+        loaderTitle.innerText = `Starting Sandbox for ${bundle.brandName || bundle.name}...`;
+        loaderDesc.innerText = `Mounting ${Object.keys(bundle.files).length} virtual files and styles...`;
+
+        const container = document.getElementById('preview-container');
+        container.innerHTML = '';
+        container.style.display = 'block';
+
+        const iframe = document.createElement('iframe');
+        container.appendChild(iframe);
+
+        const client = await loadSandpackClient(
+          iframe,
+          {
+            files: bundle.files,
+            template: 'react-ts',
+            customSetup: {
+              dependencies: bundle.dependencies,
+              entry: bundle.entryFile || '/App.tsx',
+            },
+          },
+          {
+            showOpenInCodeSandbox: false,
+          }
+        );
+
+        // Once Sandpack signals it has started, hide the loader
+        client.listen((msg) => {
+          if (msg.type === 'status' && msg.status === 'done') {
+            document.getElementById('loader').style.display = 'none';
+          }
+        });
+
+        // Safety timeout to dismiss loader after 2.5s
+        setTimeout(() => {
+          const loader = document.getElementById('loader');
+          if (loader) loader.style.display = 'none';
+        }, 2500);
+
+      } catch (err) {
+        document.getElementById('loader').innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 1.5rem; max-width: 480px;">
+            <p style="color:#ef4444; font-weight:600; margin-bottom:0.5rem; font-size: 1rem;">Failed to load in-browser preview</p>
+            <p style="color:#94a3b8; font-size:0.85rem; line-height: 1.4;">${err.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    initSandbox();
+  </script>
+</body>
+</html>

@@ -12,7 +12,14 @@ import { logEmitter, log } from './lib/logger.js';
 import { config } from 'dotenv';
 import type { GeneratedFile } from './schemas/builder.js';
 import { connectDB } from './db/connection.js';
-import { getAllProjectNamesFromDb, updateProjectFileInDb, deleteProjectFromDb } from './db/project-service.js';
+import { 
+  getAllProjectNamesFromDb, 
+  updateProjectFileInDb, 
+  deleteProjectFromDb,
+  getProjectFromDb,
+  saveOrUpdateProjectInDb
+} from './db/project-service.js';
+import { buildSandpackBundle } from './lib/project-bundler.js';
 import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 
 config();
@@ -143,6 +150,40 @@ app.get('/api/projects', async (req, res) => {
     res.json({ projects: allProjects });
   } catch (error) {
     res.status(500).json({ error: 'Failed to read projects' });
+  }
+});
+
+// Serve in-memory project bundle directly from MongoDB Atlas (for browser preview)
+app.get('/api/projects/:projectName/bundle', async (req, res) => {
+  try {
+    const { projectName } = req.params;
+    let project = await getProjectFromDb(projectName);
+
+    // Fallback: If not yet in MongoDB, load from disk and sync to MongoDB Atlas
+    if (!project) {
+      try {
+        const files = await getProjectContext(projectName);
+        if (files.length > 0) {
+          project = await saveOrUpdateProjectInDb({
+            name: projectName,
+            prompt: 'Synced from workspace',
+            project: { files, dependencies: {}, devDependencies: {} },
+            status: 'completed',
+          });
+        }
+      } catch (err) {
+        // Disk folder doesn't exist either
+      }
+    }
+
+    if (!project) {
+      return res.status(404).json({ error: `Project "${projectName}" not found in MongoDB or disk.` });
+    }
+
+    const bundle = buildSandpackBundle(project as any);
+    res.json(bundle);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate in-memory bundle' });
   }
 });
 
