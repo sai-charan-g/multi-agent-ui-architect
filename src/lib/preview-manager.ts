@@ -39,7 +39,7 @@ async function runNpmInstall(cwd: string): Promise<void> {
     log.info(`Running npm install in ${cwd}...`);
     // use npm.cmd on windows, npm on linux/mac
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const installProc = spawn(npmCmd, ['install'], { 
+    const installProc = spawn(npmCmd, ['install', '--legacy-peer-deps'], { 
       cwd, 
       stdio: 'ignore',
       shell: process.platform === 'win32'

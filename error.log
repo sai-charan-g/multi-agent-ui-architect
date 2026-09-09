@@ -1,0 +1,6 @@
+Error: npm install exited with code 1
+Error: npm install exited with code 1
+    at ChildProcess.<anonymous> (C:\Users\chara\Desktop\web designer\src\lib\preview-manager.ts:50:19)
+    at ChildProcess.emit (node:events:508:28)
+    at maybeClose (node:internal/child_process:1101:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:305:5)
