@@ -13,7 +13,7 @@ export async function runPlannerAgent(input: PlannerInput): Promise<PlannerOutpu
     {
       name: 'Planner Agent',
       promptFile: 'planner',
-      knowledgeFiles: ['design', 'components'],
+      knowledgeFiles: ['design', 'components', 'industry-blueprints'],
       outputSchema: PlannerOutputSchema,
       model: 'gemini-2.5-flash',
       temperature: 0.4,

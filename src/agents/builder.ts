@@ -1,4 +1,4 @@
-﻿import { runAgent } from './base.js';
+import { runAgent } from './base.js';
 import { GeneratedProjectSchema } from '../schemas/builder.js';
 import type { GeneratedProject, BuilderInput } from '../schemas/builder.js';
 import type { PlannerOutput } from '../schemas/planner.js';
@@ -39,6 +39,7 @@ export async function runBuilderAgent(
       knowledgeFiles: [
         'frontend-guidelines',
         'components',
+        'industry-blueprints',
         'tailwind',
         'responsive',
         'accessibility',

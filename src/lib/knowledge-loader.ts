@@ -47,6 +47,7 @@ export function loadAllKnowledge(): string {
     'accessibility',
     'tailwind',
     'frontend-guidelines',
+    'industry-blueprints',
   ];
 
   return loadKnowledge(allFiles);

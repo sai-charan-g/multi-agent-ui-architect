@@ -32,6 +32,7 @@ export async function runCriticAgent(
         'accessibility',
         'tailwind',
         'frontend-guidelines',
+        'industry-blueprints',
       ],
       outputSchema: CriticReportSchema,
       model: 'gemini-2.5-flash',
