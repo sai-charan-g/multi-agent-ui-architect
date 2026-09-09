@@ -89,6 +89,22 @@
     window.React = window.React || React;
     window.ReactDOM = window.ReactDOM || ReactDOM;
 
+    // Safeguard React.createElement against Minified Error #130
+    const origCreateElement = React.createElement;
+    React.createElement = function(type, ...args) {
+      if (type === undefined) {
+        return origCreateElement.call(React, 'div', { 'data-missing': true }, ...args);
+      }
+      if (typeof type === 'object' && type !== null && !type.$$typeof) {
+        const unwrapped = type.default || Object.values(type).find(v => typeof v === 'function' || (v && v.$$typeof));
+        if (unwrapped) {
+          return origCreateElement.call(React, unwrapped, ...args);
+        }
+        return origCreateElement.call(React, 'div', { 'data-fallback': true }, ...args);
+      }
+      return origCreateElement.call(React, type, ...args);
+    };
+
     const NextLink = function({ href, children, className, ...props }) {
       return React.createElement('a', { href: href || '#', className, ...props }, children);
     };
@@ -177,25 +193,62 @@
           }
         };
 
-        // Framer Motion Shim
+        // Framer Motion Universal Proxy
+        const tagCache = {};
         const motionProxy = new Proxy({}, {
           get(target, prop) {
-            return React.forwardRef((props = {}, ref) => {
-              const {
-                initial, animate, exit, transition, whileHover, whileTap,
-                whileInView, viewport, variants, ...domProps
-              } = props;
-              return React.createElement(prop, { ...domProps, ref });
-            });
+            if (typeof prop !== 'string') return undefined;
+            if (prop === '$$typeof' || prop === '__esModule' || prop === 'then') return undefined;
+            if (!tagCache[prop]) {
+              const Comp = React.forwardRef((props = {}, ref) => {
+                const {
+                  initial, animate, exit, transition, whileHover, whileTap,
+                  whileInView, viewport, variants, ...domProps
+                } = props;
+                return React.createElement(prop, { ...domProps, ref });
+              });
+              Comp.displayName = `motion.${prop}`;
+              tagCache[prop] = Comp;
+            }
+            return tagCache[prop];
           }
         });
 
         const FramerMotion = {
+          default: { motion: motionProxy, AnimatePresence: ({ children }) => children },
           motion: motionProxy,
           AnimatePresence: ({ children }) => children,
           useAnimation: () => ({ start: () => {}, stop: () => {} }),
           useInView: () => true,
+          __esModule: true,
         };
+
+        // Lucide Icons Universal Proxy
+        const iconCache = {};
+        const LucideProxy = new Proxy(LucideIcons, {
+          get(target, prop) {
+            if (typeof prop !== 'string') return target[prop];
+            if (prop === '__esModule') return true;
+            if (prop === '$$typeof' || prop === 'then') return undefined;
+            if (prop in target && (typeof target[prop] === 'function' || (target[prop] && target[prop].$$typeof))) {
+              return target[prop];
+            }
+            if (!iconCache[prop]) {
+              const FallbackIcon = (props = {}) => React.createElement('svg', {
+                width: 20,
+                height: 20,
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                strokeWidth: 2,
+                ...props
+              }, React.createElement('circle', { cx: 12, cy: 12, r: 9 }));
+              FallbackIcon.displayName = `Lucide.${prop}`;
+              iconCache[prop] = FallbackIcon;
+            }
+            return iconCache[prop];
+          }
+        });
 
         // 2. In-Memory Module System
         const moduleCache = {};
@@ -207,36 +260,22 @@
 
         function resolveModule(importPath, currentFilePath) {
           if (importPath === 'react' || importPath === 'react/jsx-runtime') {
-            return { default: React, ...React };
+            return { default: React, ...React, __esModule: true };
           }
           if (importPath === 'react-dom' || importPath === 'react-dom/client') {
-            return { default: ReactDOM, ...ReactDOM };
+            return { default: ReactDOM, ...ReactDOM, __esModule: true };
           }
           if (importPath === 'framer-motion') {
             return FramerMotion;
           }
           if (importPath === 'lucide-react') {
-            return new Proxy(LucideIcons, {
-              get(target, prop) {
-                if (prop in target) return target[prop];
-                // Fallback for missing icon: simple SVG placeholder
-                return (props) => React.createElement('svg', {
-                  width: 20,
-                  height: 20,
-                  viewBox: '0 0 24 24',
-                  fill: 'none',
-                  stroke: 'currentColor',
-                  strokeWidth: 2,
-                  ...props
-                }, React.createElement('circle', { cx: 12, cy: 12, r: 10 }));
-              }
-            });
+            return LucideProxy;
           }
-          if (importPath === 'clsx') return { default: clsxShim, clsx: clsxShim };
-          if (importPath === 'tailwind-merge') return { default: twMergeShim, twMerge: twMergeShim };
-          if (importPath === 'class-variance-authority') return { default: cvaShim, cva: cvaShim };
-          if (importPath.includes('next/link')) return { default: NextLink, Link: NextLink };
-          if (importPath.includes('next/image')) return { default: NextImage, Image: NextImage };
+          if (importPath === 'clsx') return { default: clsxShim, clsx: clsxShim, __esModule: true };
+          if (importPath === 'tailwind-merge') return { default: twMergeShim, twMerge: twMergeShim, __esModule: true };
+          if (importPath === 'class-variance-authority') return { default: cvaShim, cva: cvaShim, __esModule: true };
+          if (importPath.includes('next/link')) return { default: NextLink, Link: NextLink, __esModule: true };
+          if (importPath.includes('next/image')) return { default: NextImage, Image: NextImage, __esModule: true };
           if (importPath.includes('next/font')) return new Proxy({}, { get: () => NextFont });
 
           // Local file resolution
@@ -251,7 +290,7 @@
           }
 
           console.warn('Could not resolve module:', importPath);
-          return {};
+          return { __esModule: true };
         }
 
         function executeModule(filePath) {
@@ -278,6 +317,14 @@
             fn(customRequire, module, module.exports, React);
           } catch (err) {
             console.error(`Error executing ${filePath}:`, err);
+          }
+
+          if (!module.exports.__esModule) {
+            module.exports.__esModule = true;
+          }
+          const namedKeys = Object.keys(module.exports).filter(k => k !== '__esModule' && k !== 'default');
+          if (!module.exports.default && namedKeys.length > 0) {
+            module.exports.default = module.exports[namedKeys[0]];
           }
 
           return module.exports;
