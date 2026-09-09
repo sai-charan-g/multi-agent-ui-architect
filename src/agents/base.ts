@@ -78,7 +78,8 @@ export async function runAgent<TOutput>(
   // Retry loop
   let lastError: Error | null = null;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  const effectiveRetries = Math.max(maxRetries, 3);
+  for (let attempt = 1; attempt <= effectiveRetries; attempt++) {
     const startMs = Date.now();
 
     try {
@@ -101,13 +102,15 @@ export async function runAgent<TOutput>(
       return validated;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      log.warn(`${name} attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+      log.warn(`${name} attempt ${attempt}/${effectiveRetries} failed: ${lastError.message}`);
 
-      if (attempt < maxRetries) {
-        log.info(`Retrying ${name}...`);
+      if (attempt < effectiveRetries) {
+        const delayMs = attempt * 2500;
+        log.info(`Retrying ${name} in ${delayMs / 1000}s (waiting out demand spike)...`);
+        await new Promise((r) => setTimeout(r, delayMs));
       }
     }
   }
 
-  throw new Error(`${name} failed after ${maxRetries} attempts: ${lastError?.message}`);
+  throw new Error(`${name} failed after ${effectiveRetries} attempts: ${lastError?.message}`);
 }
