@@ -574,8 +574,8 @@ async function checkPreviewStatus() {
         const res = await fetch(`/api/projects/${currentProject}/preview/status`);
         const data = await res.json();
         
-        if (data.status === 'running' && data.port) {
-            showPreviewIframe(data.port);
+        if (data.status === 'running') {
+            showPreviewIframe(data.previewUrl || `/preview/${currentProject}/`);
         } else if (data.status === 'starting') {
             previewOverlay.classList.remove('hidden');
             previewIframe.classList.add('hidden');
@@ -594,9 +594,14 @@ async function checkPreviewStatus() {
     }
 }
 
-function showPreviewIframe(port) {
+function showPreviewIframe(previewUrlOrPort) {
     previewOverlay.classList.add('hidden');
-    const url = `http://localhost:${port}`;
+    let url = `/preview/${currentProject}/`;
+    if (typeof previewUrlOrPort === 'string') {
+        url = previewUrlOrPort.startsWith('http') ? previewUrlOrPort : `${window.location.origin}${previewUrlOrPort}`;
+    } else if (typeof previewUrlOrPort === 'number') {
+        url = `/preview/${currentProject}/`;
+    }
     previewIframe.src = url;
     previewIframe.classList.remove('hidden');
     stopPreviewBtn.classList.remove('hidden');
@@ -626,8 +631,8 @@ startPreviewBtn.onclick = async () => {
     try {
         const res = await fetch(`/api/projects/${currentProject}/preview/start`, { method: 'POST' });
         const data = await res.json();
-        if (data.success && data.port) {
-            showPreviewIframe(data.port);
+        if (data.success) {
+            showPreviewIframe(data.previewUrl || `/preview/${currentProject}/`);
         } else {
             throw new Error(data.error || 'Failed to start');
         }

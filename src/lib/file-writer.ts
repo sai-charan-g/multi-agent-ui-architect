@@ -94,7 +94,7 @@ export function writeProject(project: GeneratedProject, projectName: string): st
   const nextConfig = `import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  basePath: process.env.BASE_PATH || undefined,
 };
 
 export default nextConfig;

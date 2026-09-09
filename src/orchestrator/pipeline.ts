@@ -3,6 +3,7 @@ import { runDesignSystemAgent } from '../agents/design-system.js';
 import { runBuilderAgent } from '../agents/builder.js';
 import { runCriticAgent } from '../agents/critic.js';
 import { writeProject } from '../lib/file-writer.js';
+import { saveOrUpdateProjectInDb } from '../db/project-service.js';
 import { log } from '../lib/logger.js';
 import type { PlannerInput, PlannerOutput } from '../schemas/planner.js';
 import type { DesignTokens } from '../schemas/design-system.js';
@@ -97,6 +98,17 @@ export async function runPipeline(
   const projectName = options.projectName ?? slugify(plan.brandName);
   log.step(5, 5, `📁 Writing project to output/${projectName}/`);
   const outputDir = writeProject(project, projectName);
+
+  // Persist project & files to MongoDB
+  await saveOrUpdateProjectInDb({
+    name: projectName,
+    prompt: userRequest,
+    plan,
+    designTokens,
+    project,
+    criticReport,
+    status: 'completed',
+  });
 
   log.divider();
   log.timing('Total pipeline', pipelineStart);

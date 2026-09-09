@@ -1,6 +1,7 @@
 import { runEditorAgent } from '../agents/editor.js';
 import { runCriticAgent } from '../agents/critic.js';
 import { logEmitter, log } from '../lib/logger.js';
+import { updateProjectFileInDb } from '../db/project-service.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import type { GeneratedFile } from '../schemas/builder.js';
@@ -87,6 +88,7 @@ export async function runEditPipeline(
       const filePath = join(outputDir, file.path);
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, file.content, 'utf-8');
+      await updateProjectFileInDb(projectName, file.path, file.content);
       log.debug(`  Updated: ${file.path}`);
     }
     

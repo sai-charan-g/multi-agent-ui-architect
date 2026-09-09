@@ -76,10 +76,16 @@ export async function startPreview(projectDir: string, projectName: string): Pro
     log.info(`Starting dev server for ${projectName} on port ${port}...`);
     
     const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const devProc = spawn(npmCmd, ['run', 'dev', '--', '-p', port.toString()], {
+    const devProc = spawn(npmCmd, ['run', 'dev', '--', '-p', port.toString(), '-H', '127.0.0.1'], {
       cwd: projectDir,
       stdio: 'pipe',
-      shell: process.platform === 'win32'
+      shell: process.platform === 'win32',
+      env: {
+        ...process.env,
+        BASE_PATH: `/preview/${projectName}`,
+        PORT: port.toString(),
+        HOSTNAME: '127.0.0.1',
+      },
     });
 
     devProc.stdout?.on('data', (data) => {
@@ -133,4 +139,15 @@ export function getPreviewStatus(projectName: string): PreviewStatus {
     status: current.status,
     port: current.port
   };
+}
+
+export function getActivePreviewPort(projectName?: string): number | undefined {
+  if (projectName && previews.has(projectName)) {
+    const current = previews.get(projectName);
+    if (current?.status === 'running' && current.port) return current.port;
+  }
+  for (const [_, p] of previews.entries()) {
+    if (p.status === 'running' && p.port) return p.port;
+  }
+  return undefined;
 }

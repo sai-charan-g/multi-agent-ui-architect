@@ -7,15 +7,64 @@ import { resolve, join } from 'path';
 import { readdir, readFile, writeFile, rm, stat } from 'fs/promises';
 import { runPipeline } from './orchestrator/pipeline.js';
 import { runEditPipeline } from './orchestrator/editor-pipeline.js';
-import { startPreview, stopPreview, getPreviewStatus } from './lib/preview-manager.js';
+import { startPreview, stopPreview, getPreviewStatus, getActivePreviewPort } from './lib/preview-manager.js';
 import { logEmitter, log } from './lib/logger.js';
 import { config } from 'dotenv';
 import type { GeneratedFile } from './schemas/builder.js';
+import { connectDB } from './db/connection.js';
+import { getAllProjectNamesFromDb, updateProjectFileInDb, deleteProjectFromDb } from './db/project-service.js';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 
 config();
 
 const app = express();
 app.use(cors());
+
+// --- Live Preview Reverse Proxy for Production ---
+// Proxies /preview/:projectName/* requests directly to internal Next.js dev server on 127.0.0.1:<port>
+app.use('/preview/:projectName', (req, res, next) => {
+  const { projectName } = req.params;
+  const status = getPreviewStatus(projectName);
+
+  if (status.status === 'running' && status.port) {
+    const proxy = createProxyMiddleware({
+      target: `http://127.0.0.1:${status.port}`,
+      changeOrigin: true,
+      ws: true,
+      on: {
+        proxyReq: fixRequestBody,
+      }
+    });
+    return proxy(req, res, next);
+  }
+
+  if (status.status === 'starting') {
+    return res.status(503).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta http-equiv="refresh" content="2">
+          <style>
+            body { font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #94a3b8; }
+            .box { text-align: center; }
+            .spinner { border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid #38bdf8; border-radius: 50%; width: 36px; height: 36px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          </style>
+        </head>
+        <body>
+          <div class="box">
+            <div class="spinner"></div>
+            <h3 style="color: #f8fafc;">Starting Live Preview for ${projectName}...</h3>
+            <p>Compiling Next.js components. Reloading in a moment.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  res.status(404).send(`Live preview for "${projectName}" is not running. Click "Start Preview Server" in the dashboard.`);
+});
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
@@ -84,24 +133,24 @@ app.post('/api/generate', async (req, res) => {
 
 app.get('/api/projects', async (req, res) => {
   try {
-    const entries = await readdir(OUTPUT_DIR, { withFileTypes: true });
-    const projects = entries
+    const diskEntries = await readdir(OUTPUT_DIR, { withFileTypes: true }).catch(() => []);
+    const diskProjects = diskEntries
       .filter(entry => entry.isDirectory())
       .map(entry => entry.name);
-    res.json({ projects });
+
+    const dbProjects = await getAllProjectNamesFromDb();
+    const allProjects = Array.from(new Set([...dbProjects, ...diskProjects]));
+    res.json({ projects: allProjects });
   } catch (error) {
-    if ((error as any).code === 'ENOENT') {
-      res.json({ projects: [] });
-    } else {
-      res.status(500).json({ error: 'Failed to read projects directory' });
-    }
+    res.status(500).json({ error: 'Failed to read projects' });
   }
 });
 
 app.delete('/api/projects/:projectName', async (req, res) => {
   try {
     const projectPath = join(OUTPUT_DIR, req.params.projectName);
-    await rm(projectPath, { recursive: true, force: true });
+    await rm(projectPath, { recursive: true, force: true }).catch(() => {});
+    await deleteProjectFromDb(req.params.projectName);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete project' });
@@ -160,6 +209,7 @@ app.put('/api/projects/:projectName/file', async (req, res) => {
     
     const filePath = join(OUTPUT_DIR, projectName, path);
     await writeFile(filePath, content, 'utf-8');
+    await updateProjectFileInDb(projectName, path, content);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to write file' });
@@ -303,7 +353,11 @@ app.post('/api/projects/:projectName/preview/start', async (req, res) => {
     const projectDir = join(OUTPUT_DIR, projectName);
     await stat(projectDir);
     const port = await startPreview(projectDir, projectName);
-    res.json({ success: true, port });
+    res.json({ 
+      success: true, 
+      port, 
+      previewUrl: `/preview/${projectName}/` 
+    });
   } catch (error) {
     console.error("Preview start error:", error);
     require('fs').writeFileSync('error.log', String(error) + '\n' + ((error as Error).stack || ''));
@@ -320,11 +374,32 @@ app.post('/api/projects/:projectName/preview/stop', (req, res) => {
 app.get('/api/projects/:projectName/preview/status', (req, res) => {
   const { projectName } = req.params;
   const status = getPreviewStatus(projectName);
-  res.json(status);
+  res.json({
+    ...status,
+    previewUrl: status.status === 'running' ? `/preview/${projectName}/` : undefined,
+  });
 });
 
-export function startServer() {
-  app.listen(PORT, () => {
+export async function startServer() {
+  await connectDB();
+  const server = app.listen(PORT, () => {
     log.info(`Web UI is running at http://localhost:${PORT}`);
+  });
+
+  // Support WebSocket upgrades for Next.js Fast Refresh behind reverse proxy
+  server.on('upgrade', (req, socket, head) => {
+    const activePort = getActivePreviewPort();
+    if (activePort) {
+      const proxy = createProxyMiddleware({
+        target: `http://127.0.0.1:${activePort}`,
+        changeOrigin: true,
+        ws: true,
+      });
+      // @ts-ignore
+      if (typeof proxy.upgrade === 'function') {
+        // @ts-ignore
+        proxy.upgrade(req, socket, head);
+      }
+    }
   });
 }
