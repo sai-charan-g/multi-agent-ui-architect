@@ -151,7 +151,9 @@
         // 1. Inject Stylesheet (globals.css + design tokens)
         if (bundle.files['/styles.css'] && bundle.files['/styles.css'].code) {
           const styleEl = document.createElement('style');
-          styleEl.innerHTML = bundle.files['/styles.css'].code;
+          // Strip @import "tailwindcss" to avoid localhost:3000/tailwindcss 404
+          const cleanCss = bundle.files['/styles.css'].code.replace(/@import\s+["']tailwindcss["'];?/g, '');
+          styleEl.innerHTML = cleanCss;
           document.head.appendChild(styleEl);
         }
 
@@ -175,6 +177,26 @@
           }
         };
 
+        // Framer Motion Shim
+        const motionProxy = new Proxy({}, {
+          get(target, prop) {
+            return React.forwardRef((props = {}, ref) => {
+              const {
+                initial, animate, exit, transition, whileHover, whileTap,
+                whileInView, viewport, variants, ...domProps
+              } = props;
+              return React.createElement(prop, { ...domProps, ref });
+            });
+          }
+        });
+
+        const FramerMotion = {
+          motion: motionProxy,
+          AnimatePresence: ({ children }) => children,
+          useAnimation: () => ({ start: () => {}, stop: () => {} }),
+          useInView: () => true,
+        };
+
         // 2. In-Memory Module System
         const moduleCache = {};
         const rawFiles = bundle.files;
@@ -189,6 +211,9 @@
           }
           if (importPath === 'react-dom' || importPath === 'react-dom/client') {
             return { default: ReactDOM, ...ReactDOM };
+          }
+          if (importPath === 'framer-motion') {
+            return FramerMotion;
           }
           if (importPath === 'lucide-react') {
             return new Proxy(LucideIcons, {
@@ -258,24 +283,47 @@
           return module.exports;
         }
 
-        // 3. Find and Render the Main Page Component
-        let mainPageExports = null;
+        // 3. Find and Render Page, Navbar, and Footer Components
+        let pageExports = null;
+        let NavbarComp = null;
+        let FooterComp = null;
+
         for (const path of Object.keys(rawFiles)) {
+          if (path.includes('navbar.tsx')) {
+            try {
+              const exp = executeModule(path);
+              NavbarComp = exp.default || exp.Navbar || Object.values(exp)[0];
+            } catch (e) { console.warn('Navbar load error:', e); }
+          }
+          if (path.includes('footer.tsx')) {
+            try {
+              const exp = executeModule(path);
+              FooterComp = exp.default || exp.Footer || Object.values(exp)[0];
+            } catch (e) { console.warn('Footer load error:', e); }
+          }
           if (path.includes('page.tsx') || path.includes('page.jsx')) {
-            mainPageExports = executeModule(path);
-            break;
+            try {
+              pageExports = executeModule(path);
+            } catch (e) { console.warn('Page load error:', e); }
           }
         }
 
-        const PageComponent = (mainPageExports && (mainPageExports.default || Object.values(mainPageExports)[0])) || null;
+        const PageComponent = (pageExports && (pageExports.default || Object.values(pageExports)[0])) || null;
 
         if (PageComponent) {
           loader.style.display = 'none';
           const rootEl = document.getElementById('root');
           const root = ReactDOM.createRoot(rootEl);
-          root.render(React.createElement(PageComponent));
+
+          root.render(
+            React.createElement('div', { className: 'min-h-screen flex flex-col bg-background text-foreground' },
+              NavbarComp ? React.createElement(NavbarComp) : null,
+              React.createElement('main', { className: 'flex-1' }, React.createElement(PageComponent)),
+              FooterComp ? React.createElement(FooterComp) : null
+            )
+          );
         } else {
-          throw new Error('No page.tsx component found in the project.');
+          throw new Error('No page component found in the project files.');
         }
 
       } catch (err) {
